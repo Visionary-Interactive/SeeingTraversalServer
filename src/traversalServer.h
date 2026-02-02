@@ -39,9 +39,10 @@ struct LobbyQuery { // Sent upon joining lobby
 	uint8_t isHost : 1;
 	uint8_t isFull : 1;
 	uint32_t hostIP;
+	uint16_t hostPort;
 };
 
-extern NBN_ConnectionHandle connectedClientHandle;
+extern int clientCount;
 
 void TraversalServer_Init();
 bool TraversalServer_CreateServer(const char* protocol, uint16_t port);

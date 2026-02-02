@@ -21,7 +21,7 @@ void enqueue(uint32_t value)
 		front = 0;
 
 	rear++;
-	queue[rear] = value;
+	connectedClientsQueue[rear] = value;
 }
 
 void dequeue()

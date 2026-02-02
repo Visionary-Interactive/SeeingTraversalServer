@@ -6,6 +6,7 @@
 /build
 /bin/Debug
 /.vs
+/obj
 *.vcxproj
 *.vcxproj.user
 *.vcxproj.filters

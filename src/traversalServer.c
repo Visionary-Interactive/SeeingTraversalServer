@@ -5,12 +5,12 @@
 #include "nbnet.h"
 #include "net_drivers/udp.h"
 
-NBN_ConnectionHandle connectedClientHandle = 0;
+clientCount = 0;
 
 void TraversalServer_Init()
 {
+	clientCount = 0;
 	NBN_UDP_Register();
-	connectedClientHandle = 0;
 }
 
 bool TraversalServer_CreateServer(const char* protocol, uint16_t port)
@@ -42,21 +42,26 @@ int TraversalServer_HandleEvents()
 	{
 	case NBN_NEW_CONNECTION:
 	{
-		connectedClientHandle = NBN_GameServer_GetIncomingConnection();
+		NBN_ConnectionHandle connectedClientHandle = NBN_GameServer_GetIncomingConnection();
+		enqueue(connectedClientHandle);
 		#if DEBUG_LOGGING >= 1
 			printf("New client connected: %u\n", connectedClientHandle);
 		#endif
+
 		if (NBN_GameServer_AcceptIncomingConnection() < 0)
 			printf("Warning: failed to accept incoming connection\n");
+
+		NBN_ConnectionVector* clients = nbn_game_server.clients;
+		clientCount = clients->count;
 		break;
 	}
 	case NBN_CLIENT_DISCONNECTED:
 	{
 		NBN_ConnectionHandle disc = NBN_GameServer_GetDisconnectedClient();
+		dequeue();
 		#if DEBUG_LOGGING >= 1
 			printf("Client disconnected: handle=%u\n", disc);
 		#endif
-		connectedClientHandle = 0;
 		break;
 	}
 	case NBN_CLIENT_MESSAGE_RECEIVED:
@@ -78,10 +83,10 @@ int TraversalServer_HandleEvents()
 					memcpy(&recv_query, bmsg->bytes + 1, sizeof(struct LobbyQuery));
 					#if DEBUG_LOGGING >= 1
 						printf("Received LobbyQuery from client %u: auth=%u isHost=%u isFull=%u\n",
-								info.sender,
-								recv_query.auth,
-								recv_query.isHost,
-								recv_query.isFull);
+							info.sender,
+							recv_query.auth,
+							recv_query.isHost,
+							recv_query.isFull);
 					#endif
 					NBN_ConnectionVector* clients = nbn_game_server.clients;
 					for (unsigned int i = 0; i < clients->count; i++) {
@@ -113,8 +118,19 @@ int TraversalServer_HandleEvents()
 					TraversalServer_PairHostClient();
 				}
 				break;
-			default:
-				// Unknown message type
+			default: // Relay message to other client
+				if (clientCount >= 2)
+				{
+					#if DEBUG_LOGGING >= 1
+						printf("Relaying message of type %u from client %u\n", msg_type, info.sender);
+					#endif
+					if (info.sender == connectedClientsQueue[front]) {
+						TraversalServer_SendReliableByteArray(connectedClientsQueue[rear], bmsg->bytes, bmsg->length);
+					}
+					else {
+						TraversalServer_SendReliableByteArray(connectedClientsQueue[front], bmsg->bytes, bmsg->length);
+					}
+				}
 				break;
 			}
 		}
@@ -170,13 +186,14 @@ void TraversalServer_PairHostClient()
 		#endif
 
 		#if DEBUG_LOGGING >= 1
-				printf("Sending Lobby Response...");
+				printf("Sending Lobby Response...\n");
 		#endif
 		struct LobbyQuery lobbyQuery = { 0 };
 		lobbyQuery.auth = 1;
 		lobbyQuery.isHost = 1;
 		lobbyQuery.isFull = 1;
-		lobbyQuery.hostIP = udp_conn1->address.host; // Host is client1
+		lobbyQuery.hostIP = udp_conn2->address.host; // Host is client1
+		lobbyQuery.hostPort = udp_conn2->address.port;
 
 		// Send to host client
 		uint8_t buffer[1 + sizeof(struct LobbyQuery)];
@@ -186,6 +203,8 @@ void TraversalServer_PairHostClient()
 
 		// Send to joining client
 		lobbyQuery.isHost = 0;
+		lobbyQuery.hostIP = udp_conn1->address.host; // Host is client1
+		lobbyQuery.hostPort = udp_conn1->address.port;
 		memcpy(buffer + 1, &lobbyQuery, sizeof(struct LobbyQuery));
 		TraversalServer_SendReliableByteArray(client2->id, buffer, sizeof(buffer));
 	}

@@ -5,7 +5,7 @@
 
 #define QUEUE_SIZE 5
 
-uint32_t queue[QUEUE_SIZE];
+uint32_t connectedClientsQueue[QUEUE_SIZE];
 extern int front;
 extern int rear;
 

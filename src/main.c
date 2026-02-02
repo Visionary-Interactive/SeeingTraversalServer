@@ -12,8 +12,7 @@ int main(int argc, char *argv[]) {
     while (true)
     {
         now = clock();
-
-        if ((int)(now - myClock) > 200)
+        if ((int)(now - myClock) > 20)
         {
             myClock = now;
             ev = TraversalServer_HandleEvents();
