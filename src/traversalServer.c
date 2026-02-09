@@ -118,11 +118,13 @@ int TraversalServer_HandleEvents()
 					TraversalServer_PairHostClient();
 				}
 				break;
-			default: // Relay message to other client
+			case PositionSnapshot:  // Relay message to other client
+			case IncomingPlayer:
+			case MovementSnapshot:
 				if (clientCount >= 2)
 				{
 					#if DEBUG_LOGGING >= 1
-						printf("Relaying message of type %u from client %u\n", msg_type, info.sender);
+						//printf("Relaying reliable message of type %u from client %u\n", msg_type, info.sender);
 					#endif
 					if (info.sender == connectedClientsQueue[front]) {
 						TraversalServer_SendReliableByteArray(connectedClientsQueue[rear], bmsg->bytes, bmsg->length);
@@ -131,6 +133,22 @@ int TraversalServer_HandleEvents()
 						TraversalServer_SendReliableByteArray(connectedClientsQueue[front], bmsg->bytes, bmsg->length);
 					}
 				}
+				break;
+			//case MovementSnapshot:
+			//	if (clientCount >= 2)
+			//	{
+			//		#if DEBUG_LOGGING >= 1
+			//			//printf("Relaying unreliable message of type %u from client %u\n", msg_type, info.sender);
+			//		#endif
+			//		if (info.sender == connectedClientsQueue[front]) {
+			//			TraversalServer_SendUnreliableByteArray(connectedClientsQueue[rear], bmsg->bytes, bmsg->length);
+			//		}
+			//		else {
+			//			TraversalServer_SendUnreliableByteArray(connectedClientsQueue[front], bmsg->bytes, bmsg->length);
+			//		}
+			//	}
+			//	break;
+			default:
 				break;
 			}
 		}
@@ -149,6 +167,16 @@ bool TraversalServer_SendReliableByteArray(NBN_ConnectionHandle conn, uint8_t* d
 	if (NBN_GameServer_SendReliableByteArrayTo(conn, data, length) < 0)
 	{
 		printf("Failed to send Reliable Byte Array to client %u\n", conn);
+		return false;
+	}
+	return true;
+}
+
+bool TraversalServer_SendUnreliableByteArray(NBN_ConnectionHandle conn, uint8_t* data, unsigned int length)
+{
+	if (NBN_GameServer_SendUnreliableByteArrayTo(conn, data, length) < 0)
+	{
+		printf("Failed to send Unreliable Byte Array to client %u\n", conn);
 		return false;
 	}
 	return true;

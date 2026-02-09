@@ -715,7 +715,7 @@ NBN_ReliableOrderedChannel *NBN_ReliableOrderedChannel_Create(void);
 #define NBN_CONNECTION_MAX_SENT_PACKET_COUNT 16
 
 /* Number of seconds before the connection is considered stale and get closed */
-#define NBN_CONNECTION_STALE_TIME_THRESHOLD 3
+#define NBN_CONNECTION_STALE_TIME_THRESHOLD 10
 
 typedef struct NBN_MessageEntry
 {

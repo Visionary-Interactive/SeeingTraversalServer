@@ -7,7 +7,7 @@
 #include "Queue.h"
 
 #ifndef DEBUG_LOGGING
-#define DEBUG_LOGGING 2
+#define DEBUG_LOGGING 1
 #endif
 
 #if DEBUG_LOGGING == 1
@@ -49,6 +49,7 @@ bool TraversalServer_CreateServer(const char* protocol, uint16_t port);
 void TraversalServer_StopServer();
 int TraversalServer_HandleEvents();
 bool TraversalServer_SendReliableByteArray(NBN_ConnectionHandle conn, uint8_t* data, unsigned int length);
+bool TraversalServer_SendUnreliableByteArray(NBN_ConnectionHandle conn, uint8_t* data, unsigned int length);
 int TraversalServer_SendPackets();
 void TraversalServer_PairHostClient();
 

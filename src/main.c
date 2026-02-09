@@ -5,6 +5,7 @@ int main(int argc, char *argv[]) {
 	TraversalServer_Init();
 	TraversalServer_CreateServer("UDP", SERVER_PORT);
 
+    srand(1);
     clock_t myClock = clock();
     clock_t now = clock();
     int elapsed_ms = 0;
@@ -12,10 +13,12 @@ int main(int argc, char *argv[]) {
     while (true)
     {
         now = clock();
-        if ((int)(now - myClock) > 20)
+        if ((int)(now - myClock) > 25)
         {
             myClock = now;
-            ev = TraversalServer_HandleEvents();
+            while ((ev = TraversalServer_HandleEvents()) != 0)
+            {
+			}
             TraversalServer_SendPackets();
         }
     }
