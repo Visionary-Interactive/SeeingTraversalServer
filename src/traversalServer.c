@@ -6,6 +6,9 @@
 #include "net_drivers/udp.h"
 
 clientCount = 0;
+NBN_Connection* connectedPairs[PAIR_LIMIT][2];
+pairCount = 0;
+bool pairingDone[PAIR_LIMIT];
 
 void TraversalServer_Init()
 {
@@ -42,26 +45,69 @@ int TraversalServer_HandleEvents()
 	{
 	case NBN_NEW_CONNECTION:
 	{
-		NBN_ConnectionHandle connectedClientHandle = NBN_GameServer_GetIncomingConnection();
-		enqueue(connectedClientHandle);
+		//NBN_ConnectionHandle connectedClientHandle = NBN_GameServer_GetIncomingConnection();
+		//enqueue(connectedClientHandle);
+
+		NBN_ConnectionVector* clients = nbn_game_server.clients;
+
+		// Pair Clients as they connect to the server
+		if (connectedPairs[pairCount][0] == NULL) {
+			connectedPairs[pairCount][0] = clients->connections[clients->count - 1];
+		}
+		else {
+			connectedPairs[pairCount][1] = clients->connections[clients->count - 1];
+			pairCount++;
+		}
 		#if DEBUG_LOGGING >= 1
-			printf("New client connected: %u\n", connectedClientHandle);
+			printf("New client connected: %u\n", clients->connections[clients->count - 1]->id);
+			printf("Current pair count: %d\n", pairCount);
 		#endif
 
 		if (NBN_GameServer_AcceptIncomingConnection() < 0)
 			printf("Warning: failed to accept incoming connection\n");
 
-		NBN_ConnectionVector* clients = nbn_game_server.clients;
-		clientCount = clients->count;
+		//NBN_ConnectionVector* clients = nbn_game_server.clients;
+		clientCount++;
 		break;
 	}
 	case NBN_CLIENT_DISCONNECTED:
 	{
-		NBN_ConnectionHandle disc = NBN_GameServer_GetDisconnectedClient();
-		dequeue();
-		#if DEBUG_LOGGING >= 1
-			printf("Client disconnected: handle=%u\n", disc);
-		#endif
+		if (nbn_game_server.last_event.type == NBN_CLIENT_DISCONNECTED)
+		{
+			NBN_ConnectionHandle sender = NBN_GameServer_GetDisconnectedClient();
+			//NBN_UDP_Connection* conn = (NBN_UDP_Connection*)nbn_game_server.last_event.data.connection->driver_data;
+
+			// Check if IP address matches either client in a pair and remove the pair if so
+			for (int i = 0; i < PAIR_LIMIT; i++)
+			{
+				NBN_UDP_Connection* connTemp;
+
+				if (pairingDone[i] && connectedPairs[i][0] != NULL && connectedPairs[i][1] != NULL)
+				{
+					if (connectedPairs[i][0]->id == 0)
+					{
+						NBN_GameServer_CloseClientWithCode(connectedPairs[i][1]->id, 4000);
+					}
+
+					if (connectedPairs[i][1]->id == 0)
+					{
+						NBN_GameServer_CloseClientWithCode(connectedPairs[i][0]->id, 4000);
+					}
+
+					if (connectedPairs[i][1]->id == 0 || connectedPairs[i][0]->id == 0)
+					{
+						pairingDone[i] = false;
+						connectedPairs[i][0] = NULL;
+						connectedPairs[i][1] = NULL;
+					}
+				}
+			}
+			//dequeue();
+			#if DEBUG_LOGGING >= 1
+				printf("Client disconnected: handle=%u\n", sender);
+			#endif
+			clientCount--;
+		}
 		break;
 	}
 	case NBN_CLIENT_MESSAGE_RECEIVED:
@@ -103,52 +149,71 @@ int TraversalServer_HandleEvents()
 						#endif
 					}
 
-					//struct LobbyQuery lobbyQuery = { 0 };
-					//lobbyQuery.auth = 1;
-					//lobbyQuery.isHost = 1;
-					//lobbyQuery.isFull = 1;
-					////lobbyQuery.hostIP = udp_conn->address.host; // Host is client1
+					// Find pair
+					int pairIndex = -1;
+					printf("Finding pair for client %u...\n", info.sender);
 
-					//// Send to host client
-					//uint8_t buffer[1 + sizeof(struct LobbyQuery)];
-					//buffer[0] = LobbyQuery; // Set message type
-					//memcpy(buffer + 1, &lobbyQuery, sizeof(struct LobbyQuery));
-					//TraversalServer_SendReliableByteArray(info.sender, buffer, sizeof(buffer));
+					for (int i = 0; i < pairCount; i++)
+					{
+						NBN_UDP_Connection* connTemp;
 
-					TraversalServer_PairHostClient();
+						if (connectedPairs[i][0] != NULL)
+						{
+							if (connectedPairs[i][0]->id == info.sender) {
+								pairIndex = i;
+								break;
+							}
+						}
+
+						if (connectedPairs[i][1] != NULL)
+						{
+							if (connectedPairs[i][1]->id == info.sender) {
+								pairIndex = i;
+								break;
+							}
+						}
+					}
+
+					if (pairIndex == -1) {
+						#if DEBUG_LOGGING >= 1
+							printf("No pair found for client %u, ignoring LobbyQuery\n", info.sender);
+						#endif
+						break;
+					}
+
+					if (pairingDone[pairIndex]) {
+						#if DEBUG_LOGGING >= 1
+							printf("Pair already done for client %u, ignoring LobbyQuery\n", info.sender);
+						#endif
+						break;
+					}
+					TraversalServer_PairHostClient(pairIndex);
 				}
 				break;
-			case PositionSnapshot:  // Relay message to other client
-			case IncomingPlayer:
-			case MovementSnapshot:
-				if (clientCount >= 2)
-				{
-					#if DEBUG_LOGGING >= 1
-						//printf("Relaying reliable message of type %u from client %u\n", msg_type, info.sender);
-					#endif
-					if (info.sender == connectedClientsQueue[front]) {
-						TraversalServer_SendReliableByteArray(connectedClientsQueue[rear], bmsg->bytes, bmsg->length);
-					}
-					else {
-						TraversalServer_SendReliableByteArray(connectedClientsQueue[front], bmsg->bytes, bmsg->length);
+			default:  // Route message to paired client
+				#if DEBUG_LOGGING >= 1
+					//printf("Relaying reliable message of type %u from client %u\n", msg_type, info.sender);
+				#endif
+
+				for (int i = 0; i < pairCount; i++) {
+					if (!pairingDone[i]) continue; // Skip clients that aren't done pairing
+
+					if (!connectedPairs[i][0]->is_closed && !connectedPairs[i][0]->is_stale &&
+						!connectedPairs[i][1]->is_closed && !connectedPairs[i][1]->is_stale)
+					{
+						if (connectedPairs[i][0]->id == info.sender)
+						{
+							TraversalServer_SendReliableByteArray(connectedPairs[i][1]->id, bmsg->bytes, bmsg->length);
+							break;
+						}
+
+						if (connectedPairs[i][1]->id == info.sender)
+						{
+							TraversalServer_SendReliableByteArray(connectedPairs[i][0]->id, bmsg->bytes, bmsg->length);
+							break;
+						}
 					}
 				}
-				break;
-			//case MovementSnapshot:
-			//	if (clientCount >= 2)
-			//	{
-			//		#if DEBUG_LOGGING >= 1
-			//			//printf("Relaying unreliable message of type %u from client %u\n", msg_type, info.sender);
-			//		#endif
-			//		if (info.sender == connectedClientsQueue[front]) {
-			//			TraversalServer_SendUnreliableByteArray(connectedClientsQueue[rear], bmsg->bytes, bmsg->length);
-			//		}
-			//		else {
-			//			TraversalServer_SendUnreliableByteArray(connectedClientsQueue[front], bmsg->bytes, bmsg->length);
-			//		}
-			//	}
-			//	break;
-			default:
 				break;
 			}
 		}
@@ -164,7 +229,7 @@ int TraversalServer_HandleEvents()
 
 bool TraversalServer_SendReliableByteArray(NBN_ConnectionHandle conn, uint8_t* data, unsigned int length)
 {
-	if (NBN_GameServer_SendReliableByteArrayTo(conn, data, length) < 0)
+	if (conn != 0 && NBN_GameServer_SendReliableByteArrayTo(conn, data, length) < 0)
 	{
 		printf("Failed to send Reliable Byte Array to client %u\n", conn);
 		return false;
@@ -187,14 +252,13 @@ int TraversalServer_SendPackets()
 	return NBN_GameServer_SendPackets();
 }
 
-void TraversalServer_PairHostClient()
+void TraversalServer_PairHostClient(int pairIndex)
 {
-	NBN_ConnectionVector* clients = nbn_game_server.clients;
-
-	if (clients != NULL && clients->count >= 2)
+	if ((connectedPairs[pairIndex][0] != NULL) &&
+		(connectedPairs[pairIndex][1] != NULL))
 	{
-		NBN_Connection* client1 = clients->connections[0];
-		NBN_Connection* client2 = clients->connections[1];
+		NBN_Connection* client1 = connectedPairs[pairIndex][0];
+		NBN_Connection* client2 = connectedPairs[pairIndex][1];
 		NBN_UDP_Connection* udp_conn1 = (NBN_UDP_Connection*)client1->driver_data;
 		NBN_UDP_Connection* udp_conn2 = (NBN_UDP_Connection*)client2->driver_data;
 		#if DEBUG_LOGGING >= 1
@@ -235,5 +299,7 @@ void TraversalServer_PairHostClient()
 		lobbyQuery.hostPort = udp_conn1->address.port;
 		memcpy(buffer + 1, &lobbyQuery, sizeof(struct LobbyQuery));
 		TraversalServer_SendReliableByteArray(client2->id, buffer, sizeof(buffer));
+
+		pairingDone[pairIndex] = true;
 	}
 }

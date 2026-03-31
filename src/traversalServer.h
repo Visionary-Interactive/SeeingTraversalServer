@@ -2,12 +2,13 @@
 #define TRAVERSALSERVER_H
 
 #define SERVER_PORT 1337
+#define PAIR_LIMIT 500
 
 #include "includes.h"
 #include "Queue.h"
 
 #ifndef DEBUG_LOGGING
-#define DEBUG_LOGGING 1
+#define DEBUG_LOGGING 2
 #endif
 
 #if DEBUG_LOGGING == 1
@@ -26,11 +27,13 @@
 #endif
 
 typedef uint32_t NBN_ConnectionHandle;
+typedef struct NBN_Connection NBN_Connection;
 
 typedef enum {
 	MovementSnapshot,
 	PositionSnapshot,
 	IncomingPlayer,
+	PropInteraction,
 	LobbyQuery
 } MsgType;
 
@@ -43,6 +46,9 @@ struct LobbyQuery { // Sent upon joining lobby
 };
 
 extern int clientCount;
+extern NBN_Connection* connectedPairs[PAIR_LIMIT][2]; // Store pairs of clients (host, joining) for up to 500 lobbies (1000 clients)
+extern int pairCount;
+extern bool pairingDone[PAIR_LIMIT]; // Track if a pair is done pairing
 
 void TraversalServer_Init();
 bool TraversalServer_CreateServer(const char* protocol, uint16_t port);
@@ -51,6 +57,6 @@ int TraversalServer_HandleEvents();
 bool TraversalServer_SendReliableByteArray(NBN_ConnectionHandle conn, uint8_t* data, unsigned int length);
 bool TraversalServer_SendUnreliableByteArray(NBN_ConnectionHandle conn, uint8_t* data, unsigned int length);
 int TraversalServer_SendPackets();
-void TraversalServer_PairHostClient();
+void TraversalServer_PairHostClient(int pairIndex);
 
 #endif // TRAVERSALSERVER_H

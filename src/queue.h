@@ -3,7 +3,7 @@
 
 #include "includes.h"
 
-#define QUEUE_SIZE 5
+#define QUEUE_SIZE 1000
 
 uint32_t connectedClientsQueue[QUEUE_SIZE];
 extern int front;
